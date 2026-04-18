@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Компас | Пошук зниклих тварин</title>
+    <link rel="icon" type="image/x-icon" href="/faviconik.ico">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+        html {
+            font-size: 16px;
+        }
+        body {
+            font-size: 1rem;
+            overflow: hidden;
+        }
+        button, input, select, textarea {
+            font-size: 1rem;
+        }
+        #map {
+            height: 100vh;
+            width: 100vw;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* Верхня панель */
+        #top-panel {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(10px);
+            border-radius: 50px;
+            padding: 8px 16px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: center;
+            width: 95%;
+            max-width: 700px;
+        }
+        #search, #searchText, #typeFilter {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 40px;
+            background: rgba(255,255,255,0.9);
+            font-size: 14px;
+            outline: none;
+        }
+        #search { width: 160px; }
+        #searchText { width: 150px; }
+        #typeFilter { width: 130px; }
+        .filter-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: rgba(255,255,255,0.8);
+            padding: 5px 12px;
+            border-radius: 40px;
+            font-size: 14px;
+        }
+
+        /* Кнопка бургер */
+        .menu-toggle {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 1100;
+            background: #2b2b2b;
+            color: white;
+            border: none;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            font-size: 28px;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: 0.2s;
+        }
+        .menu-toggle:hover {
+            background: #000;
+        }
+
+        /* Бічна панель */
+        #right-panel {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            z-index: 1000;
+            background: rgba(30, 30, 40, 0.95);
+            backdrop-filter: blur(12px);
+            border-radius: 24px;
+            padding: 16px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-width: 220px;
+            max-width: 280px;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        /* Мобільна версія – панель згорнута */
+        @media (max-width: 768px) {
+            #right-panel {
+                transform: translateX(120%);
+                opacity: 0;
+                pointer-events: none;
+            }
+            #right-panel.open {
+                transform: translateX(0);
+                opacity: 1;
+                pointer-events: auto;
+            }
+        }
+
+        /* Комп'ютерна версія – панель завжди відкрита, текст трохи більший */
+        @media (min-width: 769px) {
+            #right-panel {
+                transform: none;
+                opacity: 1;
+                pointer-events: auto;
+            }
+            .menu-toggle {
+                display: none;
+            }
+            #right-panel a, #right-panel #nickname {
+                font-size: 15px;
+                padding: 8px 12px;
+            }
+            #right-panel #info-text {
+                font-size: 13px;
+                padding: 8px;
+            }
+        }
+
+        #right-panel a, #nickname {
+            background: rgba(255,255,255,0.15);
+            color: white;
+            font-size: 14px;
+            padding: 8px 12px;
+            border-radius: 30px;
+            text-align: center;
+            text-decoration: none;
+        }
+        #right-panel a:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        #nickname {
+            background: rgba(255,255,255,0.9);
+            color: #1e1e1e;
+        }
+        #info-text {
+            font-size: 12px;
+            background: rgba(0,0,0,0.5);
+            padding: 8px;
+            border-radius: 16px;
+            line-height: 1.4;
+            color: #f0f0f0;
+        }
+
+        /* Плаваючі кнопки */
+        #addBtn {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: #2b2b2b;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 60px;
+            font-weight: 600;
+            font-size: 16px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        #addBtn.cancel {
+            background: #d32f2f;
+        }
+        #geolocateBtn {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+            background: #2b2b2b;
+            color: white;
+            border: none;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            font-size: 24px;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Модальні вікна */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(5px);
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            background: rgba(255,255,255,0.95);
+            border-radius: 30px;
+            padding: 20px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        .modal .close {
+            float: right;
+            font-size: 28px;
+            cursor: pointer;
+        }
+        select, textarea, .modal button {
+            width: 100%;
+            padding: 12px;
+            margin: 8px 0;
+            border: none;
+            border-radius: 30px;
+            font-size: 16px;
+            background: #f0f0f0;
+        }
+        .modal button {
+            background: #2b2b2b;
+            color: white;
+            cursor: pointer;
+        }
+        .comment-item {
+            border-bottom: 1px solid #ddd;
+            padding: 8px 0;
+        }
+        .toast {
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 30px;
+            font-size: 14px;
+            z-index: 2001;
+            animation: fadeOut 3s forwards;
+        }
+        @keyframes fadeOut {
+            0% { opacity: 1; }
+            70% { opacity: 1; }
+            100% { opacity: 0; visibility: hidden; }
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+
+    <div id="top-panel">
+        <input type="text" id="search" placeholder="🔍 Пошук місця...">
+        <input type="text" id="searchText" placeholder="🔍 Пошук за текстом...">
+        <select id="typeFilter">
+            <option value="">Всі типи</option>
+            <option value="1">🐕 Пропав собака</option>
+            <option value="2">🐈 Пропала кішка</option>
+            <option value="3">⚠️ Жвавий трафік - обережно!</option>
+            <option value="4">📢 Тваринка в біді</option>
+            <option value="5">🎉 Возз'єднання</option>
+            <option value="6">😿 Поранилась</option>
+            <option value="7">💔 На жаль, не врятували</option>
+        </select>
+        <label class="filter-label"><input type="checkbox" id="onlyMineCheckbox"> Тільки мої</label>
+    </div>
+
+    <button id="menuToggle" class="menu-toggle">☰</button>
+
+    <div id="right-panel">
+        <div id="info-text">
+            🐾 Проєкт «Компас» допомагає шукати зниклих тварин. Позначайте, де востаннє бачили тварину, додавайте прикмети, фото, координуйте пошук. <br>
+            💡 Чим більше людей долучається – тим більше тварин повертається додому. <br>
+            🐶 Допоможіть безпритульним знайти родину!
+        </div>
+        <a href="#" target="_blank" id="telegramLink">📱 Telegram</a>
+        <a href="#" target="_blank" id="githubLink">🐙 GitHub</a>
+        <a href="#" target="_blank" id="moderationLink">🛡️ Модерація</a>
+        <input type="text" id="nickname" placeholder="Ваш нік" maxlength="30">
+    </div>
+
+    <button id="addBtn">➕ Додати позначку</button>
+    <button id="geolocateBtn" title="Моє місце">📍</button>
+
+    <!-- Модальне вікно додавання -->
+    <div id="eventModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3>➕ Додати позначку</h3>
+            <select id="eventType">
+                <option value="1">🐕 Пропав собака</option>
+                <option value="2">🐈 Пропала кішка</option>
+                <option value="3">⚠️ Жвавий трафік - обережно!</option>
+                <option value="4">📢 Тваринка в біді</option>
+                <option value="5">🎉 Возз'єднання</option>
+                <option value="6">😿 Поранилась</option>
+                <option value="7">💔 На жаль, не врятували</option>
+            </select>
+            <textarea id="eventComment" placeholder="Опис тварини, прикмети, контакти (до 200 символів)" maxlength="200"></textarea>
+            <div id="captchaBlock">
+                <label id="captchaQuestion"></label>
+                <input type="text" id="captchaAnswer" placeholder="Відповідь">
+            </div>
+            <button id="saveEvent">✨ Зберегти</button>
+        </div>
+    </div>
+
+    <!-- Модальне вікно коментарів -->
+    <div id="commentsModal" class="modal">
+        <div class="modal-content">
+            <span class="close" id="closeCommentsModal">&times;</span>
+            <h3>💬 Коментарі</h3>
+            <div id="commentsList"></div>
+            <textarea id="newCommentText" placeholder="Ваш коментар (до 200 символів)" maxlength="200"></textarea>
+            <button id="submitCommentBtn">➕ Додати коментар</button>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
