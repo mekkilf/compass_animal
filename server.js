@@ -7,7 +7,7 @@ const app = express();
 app.use(express.json());
 app.use(express.static('public'));
 
-// Rate limiter (в пам'яті, на основі IP)
+// Rate limiter (на основі IP, в пам'яті)
 const rateLimit = new Map();
 app.use((req, res, next) => {
     const ip = req.ip;
@@ -24,12 +24,13 @@ app.use((req, res, next) => {
     next();
 });
 
+// Підключення до SQLite
 const db = new sqlite3.Database('./savelifemap.db', (err) => {
     if (err) console.error('❌ Помилка БД:', err);
     else console.log('✅ SQLite підключено');
 });
 
-// Таблиці (без поля last_ip)
+// Створення таблиць (без зберігання IP)
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
@@ -81,7 +82,7 @@ db.serialize(() => {
     )`);
 });
 
-// Функція часу життя для 7 типів подій
+// Функція часу життя події для 7 типів
 function getExpiresAt(eventType) {
     const now = new Date();
     switch (parseInt(eventType)) {
@@ -95,7 +96,7 @@ function getExpiresAt(eventType) {
     }
 }
 
-// Адмін токен
+// Адмін токен (з .env)
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
 if (!ADMIN_TOKEN) {
     console.error('❌ Помилка: ADMIN_TOKEN не задано в .env');
@@ -115,6 +116,7 @@ function logAdminAction(adminUser, action, ip) {
 
 // ========== ПУБЛІЧНІ МАРШРУТИ ==========
 
+// Отримати події в межах видимої області
 app.get('/api/events', (req, res) => {
     const { bounds } = req.query;
     if (!bounds) return res.status(400).json({ error: 'bounds required' });
@@ -133,6 +135,7 @@ app.get('/api/events', (req, res) => {
     });
 });
 
+// Додати подію (з лімітом 10 за 10 годин)
 app.post('/api/events', (req, res) => {
     const { user_id, nickname, event_type, lat, lng, comment } = req.body;
     if (!user_id || !event_type || !lat || !lng) {
@@ -164,6 +167,7 @@ app.post('/api/events', (req, res) => {
     });
 });
 
+// Редагувати коментар події
 app.put('/api/events/:id', (req, res) => {
     const { user_id, comment } = req.body;
     db.get('SELECT user_id FROM events WHERE id = ?', [req.params.id], (err, event) => {
@@ -177,6 +181,7 @@ app.put('/api/events/:id', (req, res) => {
     });
 });
 
+// Видалити подію
 app.delete('/api/events/:id', (req, res) => {
     const { user_id } = req.body;
     db.get('SELECT user_id FROM events WHERE id = ?', [req.params.id], (err, event) => {
@@ -190,6 +195,7 @@ app.delete('/api/events/:id', (req, res) => {
     });
 });
 
+// Отримати коментарі до події
 app.get('/api/events/:id/comments', (req, res) => {
     db.all(`
         SELECT c.*, u.nickname FROM comments c
@@ -201,6 +207,7 @@ app.get('/api/events/:id/comments', (req, res) => {
     });
 });
 
+// Додати коментар (ліміт 10 на подію)
 app.post('/api/events/:id/comments', (req, res) => {
     const { user_id, comment } = req.body;
     if (!comment || comment.trim() === '') {
@@ -219,6 +226,7 @@ app.post('/api/events/:id/comments', (req, res) => {
     });
 });
 
+// Редагувати коментар
 app.put('/api/comments/:id', (req, res) => {
     const { user_id, comment } = req.body;
     db.get('SELECT user_id FROM comments WHERE id = ?', [req.params.id], (err, comm) => {
@@ -233,6 +241,7 @@ app.put('/api/comments/:id', (req, res) => {
     });
 });
 
+// Видалити коментар
 app.delete('/api/comments/:id', (req, res) => {
     const { user_id } = req.body;
     db.get('SELECT user_id FROM comments WHERE id = ?', [req.params.id], (err, comm) => {
@@ -246,6 +255,7 @@ app.delete('/api/comments/:id', (req, res) => {
     });
 });
 
+// Скарга на подію або коментар
 app.post('/api/report', (req, res) => {
     const { user_id, target_type, target_id } = req.body;
     const ip = req.ip;
@@ -256,6 +266,7 @@ app.post('/api/report', (req, res) => {
     });
 });
 
+// Оновлення нікнейму
 app.put('/api/users/nickname', (req, res) => {
     const { user_id, nickname } = req.body;
     db.run('UPDATE users SET nickname = ? WHERE id = ?', [nickname.slice(0, 30), user_id], function(err) {
@@ -356,6 +367,17 @@ app.get('/admin/api/stats', isAdmin, (req, res) => {
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// ========== АВТОМАТИЧНЕ ВИДАЛЕННЯ ЗАСТАРІЛИХ ПОДІЙ ==========
+setInterval(() => {
+    db.run(`DELETE FROM events WHERE expires_at < datetime('now')`, function(err) {
+        if (err) {
+            console.error('❌ Помилка автовидалення:', err.message);
+        } else if (this.changes > 0) {
+            console.log(`🧹 Автовидалено ${this.changes} застарілих подій.`);
+        }
+    });
+}, 30 * 60 * 1000); // кожні 30 хвилин
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server on http://localhost:${PORT}`));
